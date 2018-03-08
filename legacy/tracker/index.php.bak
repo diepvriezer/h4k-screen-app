@@ -1,0 +1,199 @@
+<html>
+<head>
+	<title>Live tracker!</title>
+</head>
+<body>
+	<h1>Test 2!</h1>
+    <div id="testPanel">
+        <input type="text" id="heat" value="1" />
+        <input type="text" id="speed" value="50" />
+        <button id="reset" type="button">Reset!</button>
+        <button id="connect" type="button">Connect!</button>
+    </div>
+    <ul id="messages">
+
+    </ul>
+    <script src="https://code.jquery.com/jquery-2.2.4.min.js"
+            integrity="sha256-BbhdlvQf/xTY9gja0Dq3HiwQF8LaCRTXxZKRutelT44="
+            crossorigin="anonymous"></script>
+<script type="text/javascript">
+    var hostPush = 'push.master.time-team.nl';
+    var hostPull = 'api.master.time-team.nl';
+    var username = 'roeivierkamp';
+    var password = 'C47FG5MxUdJR7MmZ';
+    var client = 'screenclient3';
+    var proxy = 'http://roeivierkamp.com:8080/tracker/proxy.php';
+    var NEWLINE = '\r\n';
+    var requests = [];
+
+    function proxyUrl(url) {
+        return proxy + '?url=' + encodeURIComponent(url);
+    }
+    function connError(xhr) {
+        console.log('Request failed.  Returned status of ' + xhr.status);
+        xhr.abort();
+    }
+    function makeRequest(url, callback, partial) {
+        partial = (typeof partial !== 'undefined') ? partial : false;
+        var minState = partial ? 3 : 4;
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', url, true);
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState >= minState) {
+                callback(xhr);
+            }
+        }
+        xhr.send(null);
+        requests.push(xhr); // to unload later.
+    }
+    function abortAll() {
+        requests.forEach(function (xhr, i) {
+            if (xhr) xhr.abort();
+        });
+    }
+    function pull(path, callback) {
+        var url = 'http://' + hostPull + '/2/roeivierkamp/' + path;
+        url = proxyUrl(url);
+        console.log('PULL request ' + url);
+
+        makeRequest(url, function (xhr) {
+            if (xhr.status == 200) {
+                obj = JSON.parse(xhr.responseText);
+                callback(obj);
+            } else {
+                connError(xhr);
+            }
+        });
+    }
+    function toLookup(arr) {
+        var lookup = {};
+        for (var i = 0, len = arr.length; i < len; i++) {
+            lookup[arr[i].id] = arr[i];
+        }
+        return lookup;
+    }
+    function getCourseData(callback) {
+        var data = {};
+        var remaining = 6;
+        var done = function () {
+            remaining--;
+            if (remaining <= 0) {
+                callback(data);
+            }
+        }
+        pull('crew.json?stroke', function (d) { data.crews = toLookup(d); done(); });
+        pull('club.json', function (d) { data.clubs = toLookup(d); done(); });
+        pull('race.json', function (d) { data.races = toLookup(d); done(); });
+        pull('heat.json', function (d) { data.heats = toLookup(d); done(); });
+        pull('heatgroup.json?event', function (d) { data.groups = toLookup(d); done(); });
+        pull('event.json', function (d) { data.events = toLookup(d); done(); });
+    }
+
+    var df = {};
+    getCourseData(function (data) {
+        df = data;
+
+        // TEST
+        for (var key in df.races) {
+            df.races[key].status = 0;
+        }
+    });
+
+    function popMessage(str) {
+        $('#messages').append('<li>' + str + '</li>');
+    }
+
+    var messageHandlers = {
+        "timing": function (timing) {
+            if ("race_id" in timing && "status" in timing && "location_id" in timing &&
+                "heat_id" in timing && "group_id" in timing && timing.status == 1) {
+                var isFinish = (timing.location_id == 1);
+                var race = df.races[timing.race_id];
+                var heat = df.heats[timing.heat_id];
+                if (race === undefined || heat === undefined) {
+                    return;
+                }
+                if (isFinish && "total" in timing) {
+                    // check against known finishes.
+                    if (race.status != 4) {
+                        popMessage(race.bow + ' has finished in ' + timing.total.time);
+                    }
+                } else {
+                    var group = df.groups[timing.group_id];
+                    popMessage(race.bow + ' in ' + group.event.code + ' has started the ' + heat.name);
+                }
+            }
+        },
+        "race": function (race) {
+            df.races[race.id] = race;
+            console.log('Race: ' + race);
+        },
+        "heat": function (heat) {
+            df.heats[heat.id] = heat;
+            popMessage(heat.name + ' has status ' + heat.status);
+        }
+    };
+
+    var allMessages = [];
+    function handleMessage(str) {
+        var obj = JSON.parse(str);
+        allMessages.push(obj);
+        if (obj.type in messageHandlers) messageHandlers[obj.type](obj.data);
+    }
+    
+
+    function pushLoop() {
+        var url = 'http://' + hostPush + '/2/' + client + '/http/roeivierkamp-heat-json/roeivierkamp-timing-json/roeivierkamp-race-json';
+        url = proxyUrl(url);
+        console.log('PUSH loop on ' + url);
+
+        var lastIx = 0;
+        makeRequest(url, function (xhr) {
+            if (xhr.status == 200) {
+                var response = xhr.responseText.substr(lastIx);
+
+                var lastBreak = response.lastIndexOf(NEWLINE);
+                if (lastBreak > 0) {
+                    var toParse = response.substr(0, lastBreak);
+                    lastIx += lastBreak;
+
+                    var messages = toParse.split(NEWLINE);
+                    messages.forEach(function (msg, i) {
+                        msg = msg.trim();
+                        if (msg) handleMessage(msg);
+                    });
+                }
+            } else {
+                connError(xhr);
+            }
+
+            if (xhr.readyState == 4) {
+                console.log("done");
+            }
+        }, true);
+    }
+
+
+    $('#reset').click(function () {
+        var url = proxyUrl('http://' + hostPull + '/2/replay.json?regatta_id=29&heat_id=' + 
+                            $('#heat').val() + '&speed=' + $('#speed').val());
+        console.log("Request reset to " + url);
+        makeRequest(url, function (xhr) {
+            if (xhr.status == 200) {
+                window.location.reload(true);
+            } else {
+                connError(xhr);
+            }
+        }, true);
+    });
+    $('#connect').click(function () {
+        abortAll();
+        pushLoop();
+    })
+    $(document).ready(function () {
+    });
+
+    $(window).unload(abortAll);
+
+</script>
+</body>
