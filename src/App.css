@@ -2,10 +2,10 @@
   text-align: center;
 }
 
-.App-logo {
+/* .App-logo {
   animation: App-logo-spin infinite 20s linear;
   height: 80px;
-}
+} */
 
 .logo-heineken {
   height: 80px;
@@ -16,7 +16,7 @@
 }
 
 .logo-heineken path, text {
-  fill: #ffcc00;
+  fill: #333;
   font-family: "Heineken Serif";
   font-size: 38px;
 }
