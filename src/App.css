@@ -7,6 +7,20 @@
   height: 80px;
 }
 
+.logo-heineken {
+  height: 80px;
+  position: absolute;
+  right: 25px;
+  bottom: 25px;
+  z-index: 10;
+}
+
+.logo-heineken path, text {
+  fill: #ffcc00;
+  font-family: "Heineken Serif";
+  font-size: 38px;
+}
+
 .App-header {
   background-color: #222;
   height: 150px;

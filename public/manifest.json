@@ -1,6 +1,6 @@
 {
-  "short_name": "React App",
-  "name": "Create React App Sample",
+  "short_name": "H4K Screen",
+  "name": "App to run as overlay on big screens",
   "icons": [
     {
       "src": "favicon.ico",
